@@ -1,0 +1,9 @@
+{
+  "name": "emg-traffic-backend",
+  "version": "1.0.0",
+  "description": "EMG Traffic Plan Designer — Vercel backend",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev"
+  }
+}
