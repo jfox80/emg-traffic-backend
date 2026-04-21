@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   const filename  = `TrafficPlan_${timestamp}.jpeg`;
 
   // ── Row data — only fields we know AppSheet accepts ───────────────────────
-  const rowData = {
+ const rowData = {
     'Date?':               dateStr,
     'Time?':               timeStr,
     'Work Zone Location?': planInfo.workZoneLocation || '43.6532,-79.3832',
@@ -37,15 +37,15 @@ export default async function handler(req, res) {
     'Typical Layout Used': planInfo.layoutTitle || 'Custom',
     'Modified?':           'Yes',
     'Layout Modification': {
-      FileName:      filename,
-      FileExtension: 'jpeg',
-      FileData:      planImageBase64,
+        FileName:      filename,
+        FileExtension: 'jpeg',
+        FileData:      planImageBase64,
     },
     'Safety Talk?':        'No',
     'Notes':               placedSigns.length
                              ? `Signs placed: ${placedSigns.map(s => s.id).join(', ')}`
                              : '',
-  };
+};
 
   // Add optional fields only if they have values
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
