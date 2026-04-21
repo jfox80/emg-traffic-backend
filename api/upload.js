@@ -24,6 +24,7 @@ export default async function handler(req, res) {
   }
 
   console.log('Received plan. Image chars:', planImageBase64.length);
+  console.log('FormID received:', planInfo.formId || 'none — will Add new row');
 
   // ── Step 1: Upload image to Cloudinary ────────────────────────────────────
   let imageUrl = null;
@@ -36,23 +37,33 @@ export default async function handler(req, res) {
   }
 
   // ── Step 2: Build AppSheet row ─────────────────────────────────────────────
-  const now       = new Date();
-  const dateStr   = now.toISOString().split('T')[0];
-  const timeStr   = now.toTimeString().split(' ')[0];
+  const now     = new Date();
+  const dateStr = now.toISOString().split('T')[0];
+  const timeStr = now.toTimeString().split(' ')[0];
+
+  // Decide Add vs Edit based on whether a formId was passed
+  const isEdit = !!(planInfo.formId);
+  const action = isEdit ? 'Edit' : 'Add';
+  console.log('AppSheet action:', action);
 
   const rowData = {
-    'Date?':                dateStr,
-    'Time?':                timeStr,
-    'Work Zone Location?':  planInfo.workZoneLocation || '43.6532,-79.3832',
-    'Posted Speed?':        '60 km/hr',
-    'Typical Layout Used':  planInfo.layoutTitle      || 'Custom',
-    'Modified?':            'Yes',
-    'Layout Modification':  imageUrl,   // Cloudinary URL stored in the URL column
-    'Safety Talk?':         'No',
-    'Notes':                placedSigns.length
-                              ? `Signs placed: ${placedSigns.map(s => s.id).join(', ')}`
-                              : '',
+    'Date?':               dateStr,
+    'Time?':               timeStr,
+    'Work Zone Location?': planInfo.workZoneLocation || '43.6532,-79.3832',
+    'Posted Speed?':       '60 km/hr',
+    'Typical Layout Used': planInfo.layoutTitle      || 'Custom',
+    'Modified?':           'Yes',
+    'Layout Modification': imageUrl,
+    'Safety Talk?':        'No',
+    'Notes':               placedSigns.length
+                             ? `Signs placed: ${placedSigns.map(s => s.id).join(', ')}`
+                             : '',
   };
+
+  // Include the key field so AppSheet knows which row to edit
+  if (isEdit) {
+    rowData['FormID'] = planInfo.formId;
+  }
 
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
   if (planInfo.roadComponent) rowData['Road Component?'] = planInfo.roadComponent;
@@ -60,13 +71,13 @@ export default async function handler(req, res) {
   console.log('Keys being sent:', Object.keys(rowData).join(', '));
 
   // ── Step 3: Send to AppSheet ───────────────────────────────────────────────
-  const result = await uploadToAppSheet(rowData);
+  const result = await uploadToAppSheet(rowData, action);
   console.log('AppSheet result:', JSON.stringify(result).slice(0, 300));
 
   if (result.success) {
     return res.status(200).json({
       success: true,
-      message: 'Traffic plan uploaded successfully',
+      message: `Traffic plan ${isEdit ? 'updated' : 'uploaded'} successfully`,
       imageUrl,
     });
   }
@@ -80,11 +91,9 @@ export default async function handler(req, res) {
 
 // ── Cloudinary upload ─────────────────────────────────────────────────────────
 async function uploadToCloudinary(base64Image) {
-  // Cloudinary signed upload using SHA-1 signature
   const timestamp = Math.round(Date.now() / 1000);
   const folder    = 'emg-traffic-plans';
 
-  // Build signature string (params must be alphabetical)
   const paramsToSign = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
   const signature    = await sha1(paramsToSign);
 
@@ -97,10 +106,7 @@ async function uploadToCloudinary(base64Image) {
 
   const response = await fetch(
     `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-    {
-      method: 'POST',
-      body:   formData,
-    }
+    { method: 'POST', body: formData }
   );
 
   const data = await response.json();
@@ -109,11 +115,10 @@ async function uploadToCloudinary(base64Image) {
     throw new Error(data.error?.message || `Cloudinary error ${response.status}`);
   }
 
-  // Return the secure URL
   return data.secure_url;
 }
 
-// ── SHA-1 helper (Web Crypto — available in Vercel Edge/Node) ─────────────────
+// ── SHA-1 helper ──────────────────────────────────────────────────────────────
 async function sha1(message) {
   const msgBuffer  = new TextEncoder().encode(message);
   const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
@@ -122,11 +127,11 @@ async function sha1(message) {
 }
 
 // ── AppSheet API ──────────────────────────────────────────────────────────────
-async function uploadToAppSheet(rowData) {
+async function uploadToAppSheet(rowData, action = 'Add') {
   const url = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${encodeURIComponent(APPSHEET_TABLE)}/Action`;
 
   const payload = {
-    Action:     'Add',
+    Action:     action,
     Properties: {},
     Rows:       [rowData],
   };
