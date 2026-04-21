@@ -57,9 +57,10 @@ export default async function handler(req, res) {
                              : '',
   };
 
-  if (isEdit) {
+ if (isEdit) {
     rowData['FormID'] = planInfo.formId;
-  }
+    rowData['_ComputedKey'] = planInfo.computedKey;
+}
 
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
   if (planInfo.roadComponent) rowData['Road Component?'] = planInfo.roadComponent;
