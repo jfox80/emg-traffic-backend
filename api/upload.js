@@ -36,11 +36,7 @@ export default async function handler(req, res) {
     'Posted Speed?':       '60 km/hr',
     'Typical Layout Used': planInfo.layoutTitle || 'Custom',
     'Modified?':           'Yes',
-    'Layout Modification': {
-        FileName:      filename,
-        FileExtension: 'jpeg',
-        FileData:      planImageBase64,
-    },
+    
     'Safety Talk?':        'No',
     'Notes':               placedSigns.length
                              ? `Signs placed: ${placedSigns.map(s => s.id).join(', ')}`
