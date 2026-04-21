@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "EMG Traffic Plan Designer — Vercel backend",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vercel dev"
   }
