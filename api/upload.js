@@ -1,9 +1,9 @@
 const APPSHEET_APP_ID  = 'e7f17c0c-6128-4a5f-9b6a-70253a7dd589';
-const APPSHEET_API_KEY = process.env.APPSHEET_API_KEY; // set in Vercel dashboard
+const APPSHEET_API_KEY = process.env.APPSHEET_API_KEY;
 const APPSHEET_TABLE   = 'Form Data';
 
 export default async function handler(req, res) {
-  // ── CORS ────────────────────────────────────────────────────────────────────
+  // ── CORS ──────────────────────────────────────────────────────────────────
   res.setHeader('Access-Control-Allow-Origin',  '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET')     return res.status(200).json({ success: true, message: 'EMG Traffic Plan API is running' });
   if (req.method !== 'POST')    return res.status(405).json({ success: false, error: 'Method not allowed' });
 
-  // ── Parse body ───────────────────────────────────────────────────────────────
+  // ── Parse body ─────────────────────────────────────────────────────────────
   const { planImageBase64, planInfo = {}, placedSigns = [] } = req.body;
 
   if (!planImageBase64) {
@@ -21,42 +21,38 @@ export default async function handler(req, res) {
 
   console.log('Received plan. Image chars:', planImageBase64.length);
 
-  // ── Timestamps ───────────────────────────────────────────────────────────────
+  // ── Timestamps ─────────────────────────────────────────────────────────────
   const now       = new Date();
   const dateStr   = now.toISOString().split('T')[0];
   const timeStr   = now.toTimeString().split(' ')[0];
   const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
   const filename  = `TrafficPlan_${timestamp}.jpeg`;
 
-  // ── Row data ─────────────────────────────────────────────────────────────────
+  // ── Row data — only fields we know AppSheet accepts ───────────────────────
   const rowData = {
     'Date?':               dateStr,
     'Time?':               timeStr,
-    'Prepared By?':        'EMG Designer',
-    'Province':            'Ontario',
-    'Road Type?':          planInfo.roadType        || '',
-    'Road Component?':     planInfo.roadComponent   || '',
-    'Posted Speed?':       '',
-    'Traffic Volume?':     'No',
-    'Duration of Work?':   '',
-    'Closure Type?':       '',
-    'Typical Layout Used': planInfo.layoutTitle     || 'Custom',
+    'Posted Speed?':       '60 km/hr',
+    'Typical Layout Used': planInfo.layoutTitle || 'Custom',
     'Modified?':           'Yes',
     'Layout Modification': {
       FileName:      filename,
       FileExtension: 'jpeg',
       FileData:      planImageBase64,
     },
-    'Safety Talk?':        'Yes',
+    'Safety Talk?':        'No',
     'Notes':               placedSigns.length
                              ? `Signs placed: ${placedSigns.map(s => s.id).join(', ')}`
                              : '',
-    'Status':              'Active',
   };
+
+  // Add optional fields only if they have values
+  if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
+  if (planInfo.roadComponent) rowData['Road Component?'] = planInfo.roadComponent;
 
   console.log('Keys being sent:', Object.keys(rowData).join(', '));
 
-  // ── Call AppSheet ─────────────────────────────────────────────────────────────
+  // ── Call AppSheet ──────────────────────────────────────────────────────────
   const result = await uploadToAppSheet(rowData);
   console.log('AppSheet result:', JSON.stringify(result).slice(0, 300));
 
@@ -71,7 +67,7 @@ export default async function handler(req, res) {
   });
 }
 
-// ── AppSheet API ──────────────────────────────────────────────────────────────
+// ── AppSheet API ───────────────────────────────────────────────────────────
 async function uploadToAppSheet(rowData) {
   const url = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${encodeURIComponent(APPSHEET_TABLE)}/Action`;
 
