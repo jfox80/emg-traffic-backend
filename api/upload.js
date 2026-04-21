@@ -7,7 +7,6 @@ const CLOUDINARY_API_KEY    = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
 export default async function handler(req, res) {
-  // ── CORS ──────────────────────────────────────────────────────────────────
   res.setHeader('Access-Control-Allow-Origin',  '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -16,7 +15,6 @@ export default async function handler(req, res) {
   if (req.method === 'GET')     return res.status(200).json({ success: true, message: 'EMG Traffic Plan API is running' });
   if (req.method !== 'POST')    return res.status(405).json({ success: false, error: 'Method not allowed' });
 
-  // ── Parse body ─────────────────────────────────────────────────────────────
   const { planImageBase64, planInfo = {}, placedSigns = [] } = req.body;
 
   if (!planImageBase64) {
@@ -26,7 +24,7 @@ export default async function handler(req, res) {
   console.log('Received plan. Image chars:', planImageBase64.length);
   console.log('FormID received:', planInfo.formId || 'none — will Add new row');
 
-  // ── Step 1: Upload image to Cloudinary ────────────────────────────────────
+  // Step 1: Upload to Cloudinary
   let imageUrl = null;
   try {
     imageUrl = await uploadToCloudinary(planImageBase64);
@@ -36,12 +34,11 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'Image upload failed: ' + err.message });
   }
 
-  // ── Step 2: Build AppSheet row ─────────────────────────────────────────────
+  // Step 2: Build row
   const now     = new Date();
   const dateStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().split(' ')[0];
 
-  // Decide Add vs Edit based on whether a formId was passed
   const isEdit = !!(planInfo.formId);
   const action = isEdit ? 'Edit' : 'Add';
   console.log('AppSheet action:', action);
@@ -60,18 +57,16 @@ export default async function handler(req, res) {
                              : '',
   };
 
-  // Include the key field so AppSheet knows which row to edit
-if (isEdit) {
-    rowData['FormID'] = planInfo.formId;  
-}
-}
+  if (isEdit) {
+    rowData['FormID'] = planInfo.formId;
+  }
 
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
   if (planInfo.roadComponent) rowData['Road Component?'] = planInfo.roadComponent;
 
   console.log('Keys being sent:', Object.keys(rowData).join(', '));
 
-  // ── Step 3: Send to AppSheet ───────────────────────────────────────────────
+  // Step 3: Send to AppSheet
   const result = await uploadToAppSheet(rowData, action);
   console.log('AppSheet result:', JSON.stringify(result).slice(0, 300));
 
@@ -90,11 +85,9 @@ if (isEdit) {
   });
 }
 
-// ── Cloudinary upload ─────────────────────────────────────────────────────────
 async function uploadToCloudinary(base64Image) {
   const timestamp = Math.round(Date.now() / 1000);
   const folder    = 'emg-traffic-plans';
-
   const paramsToSign = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
   const signature    = await sha1(paramsToSign);
 
@@ -111,15 +104,12 @@ async function uploadToCloudinary(base64Image) {
   );
 
   const data = await response.json();
-
   if (!response.ok || data.error) {
     throw new Error(data.error?.message || `Cloudinary error ${response.status}`);
   }
-
   return data.secure_url;
 }
 
-// ── SHA-1 helper ──────────────────────────────────────────────────────────────
 async function sha1(message) {
   const msgBuffer  = new TextEncoder().encode(message);
   const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
@@ -127,7 +117,6 @@ async function sha1(message) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ── AppSheet API ──────────────────────────────────────────────────────────────
 async function uploadToAppSheet(rowData, action = 'Add') {
   const url = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${encodeURIComponent(APPSHEET_TABLE)}/Action`;
 
