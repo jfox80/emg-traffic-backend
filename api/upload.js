@@ -33,7 +33,6 @@ export default async function handler(req, res) {
     'Date?':               dateStr,
     'Time?':               timeStr,
     'Prepared By?':        'EMG Designer',
-    'Work Zone Location?': '',
     'Province':            'Ontario',
     'Road Type?':          planInfo.roadType        || '',
     'Road Component?':     planInfo.roadComponent   || '',
@@ -48,7 +47,7 @@ export default async function handler(req, res) {
       FileExtension: 'jpeg',
       FileData:      planImageBase64,
     },
-    'Safety Talk?':        'No',
+    'Safety Talk?':        'Yes',
     'Notes':               placedSigns.length
                              ? `Signs placed: ${placedSigns.map(s => s.id).join(', ')}`
                              : '',
