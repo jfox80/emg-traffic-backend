@@ -32,6 +32,7 @@ export default async function handler(req, res) {
   const rowData = {
     'Date?':               dateStr,
     'Time?':               timeStr,
+    'Work Zone Location?': planInfo.workZoneLocation || '43.6532,-79.3832',
     'Posted Speed?':       '60 km/hr',
     'Typical Layout Used': planInfo.layoutTitle || 'Custom',
     'Modified?':           'Yes',
