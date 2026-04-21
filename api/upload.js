@@ -61,8 +61,9 @@ export default async function handler(req, res) {
   };
 
   // Include the key field so AppSheet knows which row to edit
- if (isEdit) {
-    rowData['_ComputedKey'] = planInfo.formId;
+if (isEdit) {
+    rowData['FormID'] = planInfo.formId;  
+}
 }
 
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
