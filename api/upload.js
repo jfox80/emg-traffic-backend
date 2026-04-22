@@ -6,30 +6,91 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_API_KEY    = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
-const GOOGLE_SHEET_ID       = '11tHHhooqQ7tE1sbXQA_hVZKk2WIOoTqGQqQnqwF2kxI';
-const GOOGLE_SHEETS_API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
-const SHEET_NAME            = 'Form Data';
-const LAYOUT_MOD_COLUMN     = 'S'; // Column S in the sheet
-const FORM_ID_COLUMN        = 'AO'; // FormID column — update if different
+const GOOGLE_SHEET_ID           = '11tHHhooqQ7tE1sbXQA_hVZKk2WIOoTqGQqQnqwF2kxI';
+const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+const GOOGLE_PRIVATE_KEY           = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+const SHEET_NAME                = 'Form Data';
+const LAYOUT_MOD_COLUMN         = 'S';
+const FORM_ID_COLUMN            = 'AO';
 
-// Convert 24-hour time string to 12-hour AM/PM format
-function convertTo12Hour(time24) {
-  const parts = time24.split(':');
-  if (parts.length < 3) return time24;
-  const h = parseInt(parts[0]);
-  const m = parts[1];
-  const s = parts[2];
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hour12 = h % 12 || 12;
-  return `${hour12}:${m}:${s} ${ampm}`;
+// ── Service Account OAuth2 token ──────────────────────────────────────────────
+async function getServiceAccountToken() {
+  const now     = Math.floor(Date.now() / 1000);
+  const payload = {
+    iss:   GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud:   'https://oauth2.googleapis.com/token',
+    iat:   now,
+    exp:   now + 3600,
+  };
+
+  // Encode JWT header and payload
+  const header  = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const body    = base64url(JSON.stringify(payload));
+  const signing = `${header}.${body}`;
+
+  // Sign with private key using RS256
+  const keyData    = GOOGLE_PRIVATE_KEY;
+  const cryptoKey  = await crypto.subtle.importKey(
+    'pkcs8',
+    pemToDer(keyData),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature  = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    new TextEncoder().encode(signing)
+  );
+  const jwt = `${signing}.${base64url(signature)}`;
+
+  // Exchange JWT for access token
+  const tokenRes  = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body:    `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+  });
+  const tokenData = await tokenRes.json();
+  if (tokenData.error) throw new Error(`Token error: ${tokenData.error_description}`);
+  return tokenData.access_token;
 }
 
-// Find the row number in the sheet that matches formId, then write imageUrl to column S
+function base64url(data) {
+  let str;
+  if (typeof data === 'string') {
+    str = btoa(unescape(encodeURIComponent(data)));
+  } else {
+    // ArrayBuffer
+    const bytes = new Uint8Array(data);
+    let binary  = '';
+    for (const b of bytes) binary += String.fromCharCode(b);
+    str = btoa(binary);
+  }
+  return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function pemToDer(pem) {
+  const b64 = pem
+    .replace(/-----BEGIN[^-]+-----/, '')
+    .replace(/-----END[^-]+-----/, '')
+    .replace(/\s/g, '');
+  const binary = atob(b64);
+  const bytes  = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+// ── Write image URL directly to Google Sheet ──────────────────────────────────
 async function writeImageUrlToSheet(formId, imageUrl) {
   try {
-    // Read all values from the FormID column to find the matching row
-    const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${SHEET_NAME}!${FORM_ID_COLUMN}:${FORM_ID_COLUMN}?key=${GOOGLE_SHEETS_API_KEY}`;
-    const readRes = await fetch(readUrl);
+    const token = await getServiceAccountToken();
+
+    // Read FormID column to find matching row
+    const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${SHEET_NAME}!${FORM_ID_COLUMN}:${FORM_ID_COLUMN}`;
+    const readRes = await fetch(readUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const readData = await readRes.json();
 
     if (!readData.values) {
@@ -37,11 +98,11 @@ async function writeImageUrlToSheet(formId, imageUrl) {
       return false;
     }
 
-    // Find the row index (1-based, row 1 is header)
+    // Find matching row (1-based)
     let rowIndex = -1;
     for (let i = 0; i < readData.values.length; i++) {
       if (readData.values[i][0] && readData.values[i][0].trim() === formId.trim()) {
-        rowIndex = i + 1; // 1-based row number
+        rowIndex = i + 1;
         break;
       }
     }
@@ -51,22 +112,23 @@ async function writeImageUrlToSheet(formId, imageUrl) {
       return false;
     }
 
-    console.log(`Found FormID ${formId} at row ${rowIndex}, writing image URL to column S`);
+    console.log(`Found FormID ${formId} at row ${rowIndex}, writing to column S`);
 
-    // Write the image URL to column S of that row
-    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${SHEET_NAME}!${LAYOUT_MOD_COLUMN}${rowIndex}?valueInputOption=RAW&key=${GOOGLE_SHEETS_API_KEY}`;
+    // Write image URL to column S
+    const range    = `${SHEET_NAME}!${LAYOUT_MOD_COLUMN}${rowIndex}`;
+    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
     const writeRes = await fetch(writeUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        range:  `${SHEET_NAME}!${LAYOUT_MOD_COLUMN}${rowIndex}`,
-        values: [[imageUrl]],
-      }),
+      method:  'PUT',
+      headers: {
+        Authorization:  `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ range, values: [[imageUrl]] }),
     });
 
     const writeData = await writeRes.json();
     if (writeData.error) {
-      console.error('Sheets write error:', writeData.error);
+      console.error('Sheets write error:', JSON.stringify(writeData.error));
       return false;
     }
 
@@ -78,6 +140,7 @@ async function writeImageUrlToSheet(formId, imageUrl) {
   }
 }
 
+// ── Main handler ──────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -107,20 +170,27 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'Image upload failed: ' + err.message });
   }
 
-  // Step 2: If editing, write image URL directly to Google Sheet
   const isEdit = !!(planInfo.formId);
 
+  // Step 2: Write image URL directly to Google Sheet if editing
   if (isEdit) {
     const sheetWriteSuccess = await writeImageUrlToSheet(planInfo.formId, imageUrl);
     console.log('Sheet write result:', sheetWriteSuccess);
+
+    if (sheetWriteSuccess) {
+      return res.status(200).json({
+        success: true,
+        message: 'Traffic plan updated successfully',
+        imageUrl,
+      });
+    }
   }
 
-  // Step 3: Build AppSheet row
+  // Step 3: Build AppSheet row (for new Add, or if sheet write failed)
   const now     = new Date();
   const dateStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().split(' ')[0];
-
-  const action = isEdit ? 'Edit' : 'Add';
+  const action  = isEdit ? 'Edit' : 'Add';
   console.log('AppSheet action:', action);
 
   const rowData = {
@@ -141,7 +211,6 @@ export default async function handler(req, res) {
     rowData['FormID'] = planInfo.formId;
     delete rowData['Date?'];
     delete rowData['Time?'];
-    delete rowData['_ComputedKey'];
   }
 
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
@@ -153,7 +222,7 @@ export default async function handler(req, res) {
   const result = await uploadToAppSheet(rowData, action);
   console.log('AppSheet result:', JSON.stringify(result).slice(0, 300));
 
-  if (result.success || isEdit) {
+  if (result.success) {
     return res.status(200).json({
       success: true,
       message: `Traffic plan ${isEdit ? 'updated' : 'uploaded'} successfully`,
@@ -168,6 +237,7 @@ export default async function handler(req, res) {
   });
 }
 
+// ── Cloudinary ────────────────────────────────────────────────────────────────
 async function uploadToCloudinary(base64Image) {
   const timestamp    = Math.round(Date.now() / 1000);
   const folder       = 'emg-traffic-plans';
@@ -185,14 +255,12 @@ async function uploadToCloudinary(base64Image) {
     `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
     { method: 'POST', body: formData }
   );
-
   const data = await response.json();
-  if (!response.ok || data.error) {
-    throw new Error(data.error?.message || `Cloudinary error ${response.status}`);
-  }
+  if (!response.ok || data.error) throw new Error(data.error?.message || `Cloudinary error ${response.status}`);
   return data.secure_url;
 }
 
+// ── SHA-1 ─────────────────────────────────────────────────────────────────────
 async function sha1(message) {
   const msgBuffer  = new TextEncoder().encode(message);
   const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
@@ -200,27 +268,21 @@ async function sha1(message) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// ── AppSheet API ──────────────────────────────────────────────────────────────
 async function uploadToAppSheet(rowData, action = 'Add') {
-  const url = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${encodeURIComponent(APPSHEET_TABLE)}/Action`;
-
+  const url     = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${encodeURIComponent(APPSHEET_TABLE)}/Action`;
   const payload = {
     Action:     action,
-    Properties: {
-      Locale:         'en-US',
-      RunAsUserEmail: 'jmfox14@asu.edu',
-    },
-    Rows: [rowData],
+    Properties: { Locale: 'en-US', RunAsUserEmail: 'jmfox14@asu.edu' },
+    Rows:       [rowData],
   };
 
   let response;
   try {
     response = await fetch(url, {
       method:  'POST',
-      headers: {
-        'applicationAccessKey': APPSHEET_API_KEY,
-        'Content-Type':         'application/json',
-      },
-      body: JSON.stringify(payload),
+      headers: { 'applicationAccessKey': APPSHEET_API_KEY, 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
     });
   } catch (err) {
     console.error('Network error calling AppSheet:', err);
