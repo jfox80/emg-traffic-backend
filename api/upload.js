@@ -71,22 +71,13 @@ export default async function handler(req, res) {
                              : '',
   };
 
-  if (isEdit) {
-    // Extract original time from computedKey (format: "15:26:03: formId" from URL)
-    // AppSheet stores Time? in 12-hour format e.g. "3:26:03 PM"
-    const lastColonIdx  = planInfo.computedKey.lastIndexOf(': ');
-    const time24        = planInfo.computedKey.substring(0, lastColonIdx).trim();
-    const originalTime  = convertTo12Hour(time24);
-
-    console.log('time24 extracted:', time24);
-    console.log('originalTime (12hr):', originalTime);
-
-    rowData['FormID']        = planInfo.formId;
-    rowData['_ComputedKey']  = planInfo.computedKey;
-    rowData['Time?']         = originalTime;  // must match stored 12-hour value
-    delete rowData['Date?'];                  // keep original date
-  }
-
+ if (isEdit) {
+    rowData['FormID']       = planInfo.formId;
+    rowData['_ComputedKey'] = planInfo.computedKey;
+    // AppSheet Time? field has trailing space internally
+    rowData['Time?']        = convertTo12Hour(time24) + ' ';
+    delete rowData['Date?'];
+}
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
   if (planInfo.roadComponent) rowData['Road Component?'] = planInfo.roadComponent;
 
@@ -146,11 +137,14 @@ async function sha1(message) {
 async function uploadToAppSheet(rowData, action = 'Add') {
   const url = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${encodeURIComponent(APPSHEET_TABLE)}/Action`;
 
-  const payload = {
+ const payload = {
     Action:     action,
-    Properties: {},
-    Rows:       [rowData],
-  };
+    Properties: {
+        Locale: 'en-US',
+        Timezone: 'America/Toronto'
+    },
+    Rows: [rowData],
+};
 
   let response;
   try {
