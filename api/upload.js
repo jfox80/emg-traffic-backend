@@ -71,11 +71,17 @@ export default async function handler(req, res) {
                              : '',
   };
 
- if (isEdit) {
+if (isEdit) {
+    const lastColonIdx = planInfo.computedKey.lastIndexOf(': ');
+    const time24       = planInfo.computedKey.substring(0, lastColonIdx).trim();
+    const originalTime = convertTo12Hour(time24) + ' '; 
+
+    console.log('time24 extracted:', time24);
+    console.log('originalTime (12hr):', originalTime);
+
     rowData['FormID']       = planInfo.formId;
     rowData['_ComputedKey'] = planInfo.computedKey;
-    // AppSheet Time? field has trailing space internally
-    rowData['Time?']        = convertTo12Hour(time24) + ' ';
+    rowData['Time?']        = originalTime;
     delete rowData['Date?'];
 }
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
