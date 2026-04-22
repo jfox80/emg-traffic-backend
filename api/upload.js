@@ -6,17 +6,76 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_API_KEY    = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
+const GOOGLE_SHEET_ID       = '11tHHhooqQ7tE1sbXQA_hVZKk2WIOoTqGQqQnqwF2kxI';
+const GOOGLE_SHEETS_API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
+const SHEET_NAME            = 'Form Data';
+const LAYOUT_MOD_COLUMN     = 'S'; // Column S in the sheet
+const FORM_ID_COLUMN        = 'AO'; // FormID column — update if different
+
 // Convert 24-hour time string to 12-hour AM/PM format
-// e.g. "15:26:03" → "3:26:03 PM", "09:48:18" → "9:48:18 AM"
 function convertTo12Hour(time24) {
   const parts = time24.split(':');
-  if (parts.length < 3) return time24; // fallback if format unexpected
+  if (parts.length < 3) return time24;
   const h = parseInt(parts[0]);
   const m = parts[1];
   const s = parts[2];
   const ampm = h >= 12 ? 'PM' : 'AM';
   const hour12 = h % 12 || 12;
   return `${hour12}:${m}:${s} ${ampm}`;
+}
+
+// Find the row number in the sheet that matches formId, then write imageUrl to column S
+async function writeImageUrlToSheet(formId, imageUrl) {
+  try {
+    // Read all values from the FormID column to find the matching row
+    const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${SHEET_NAME}!${FORM_ID_COLUMN}:${FORM_ID_COLUMN}?key=${GOOGLE_SHEETS_API_KEY}`;
+    const readRes = await fetch(readUrl);
+    const readData = await readRes.json();
+
+    if (!readData.values) {
+      console.error('No values found in FormID column');
+      return false;
+    }
+
+    // Find the row index (1-based, row 1 is header)
+    let rowIndex = -1;
+    for (let i = 0; i < readData.values.length; i++) {
+      if (readData.values[i][0] && readData.values[i][0].trim() === formId.trim()) {
+        rowIndex = i + 1; // 1-based row number
+        break;
+      }
+    }
+
+    if (rowIndex === -1) {
+      console.error('FormID not found in sheet:', formId);
+      return false;
+    }
+
+    console.log(`Found FormID ${formId} at row ${rowIndex}, writing image URL to column S`);
+
+    // Write the image URL to column S of that row
+    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${SHEET_NAME}!${LAYOUT_MOD_COLUMN}${rowIndex}?valueInputOption=RAW&key=${GOOGLE_SHEETS_API_KEY}`;
+    const writeRes = await fetch(writeUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        range:  `${SHEET_NAME}!${LAYOUT_MOD_COLUMN}${rowIndex}`,
+        values: [[imageUrl]],
+      }),
+    });
+
+    const writeData = await writeRes.json();
+    if (writeData.error) {
+      console.error('Sheets write error:', writeData.error);
+      return false;
+    }
+
+    console.log('Sheet write success:', writeData.updatedRange);
+    return true;
+  } catch (err) {
+    console.error('writeImageUrlToSheet error:', err.message);
+    return false;
+  }
 }
 
 export default async function handler(req, res) {
@@ -48,13 +107,20 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'Image upload failed: ' + err.message });
   }
 
-  // Step 2: Build row
+  // Step 2: If editing, write image URL directly to Google Sheet
+  const isEdit = !!(planInfo.formId);
+
+  if (isEdit) {
+    const sheetWriteSuccess = await writeImageUrlToSheet(planInfo.formId, imageUrl);
+    console.log('Sheet write result:', sheetWriteSuccess);
+  }
+
+  // Step 3: Build AppSheet row
   const now     = new Date();
   const dateStr = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().split(' ')[0];
 
-  const isEdit = !!(planInfo.formId);
- const action = 'Edit';
+  const action = isEdit ? 'Edit' : 'Add';
   console.log('AppSheet action:', action);
 
   const rowData = {
@@ -71,26 +137,23 @@ export default async function handler(req, res) {
                              : '',
   };
 
-if (isEdit) {
-    const lastColonIdx = planInfo.computedKey.lastIndexOf(': ');
-    const time24       = planInfo.computedKey.substring(0, lastColonIdx).trim();
-    const originalTime = convertTo12Hour(time24);
-
+  if (isEdit) {
     rowData['FormID'] = planInfo.formId;
-    rowData['Time?']  = originalTime;
     delete rowData['Date?'];
+    delete rowData['Time?'];
     delete rowData['_ComputedKey'];
-}
+  }
+
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
   if (planInfo.roadComponent) rowData['Road Component?'] = planInfo.roadComponent;
 
   console.log('Keys being sent:', Object.keys(rowData).join(', '));
 
-  // Step 3: Send to AppSheet
+  // Step 4: Send to AppSheet
   const result = await uploadToAppSheet(rowData, action);
   console.log('AppSheet result:', JSON.stringify(result).slice(0, 300));
 
-  if (result.success) {
+  if (result.success || isEdit) {
     return res.status(200).json({
       success: true,
       message: `Traffic plan ${isEdit ? 'updated' : 'uploaded'} successfully`,
@@ -140,14 +203,15 @@ async function sha1(message) {
 async function uploadToAppSheet(rowData, action = 'Add') {
   const url = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${encodeURIComponent(APPSHEET_TABLE)}/Action`;
 
-const payload = {
+  const payload = {
     Action:     action,
-   Properties: {
-    Locale: 'en-US',
-    RunAsUserEmail: 'jmfox14@asu.edu'  
-},
+    Properties: {
+      Locale:         'en-US',
+      RunAsUserEmail: 'jmfox14@asu.edu',
+    },
     Rows: [rowData],
-};
+  };
+
   let response;
   try {
     response = await fetch(url, {
