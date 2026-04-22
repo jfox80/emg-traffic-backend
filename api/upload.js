@@ -61,10 +61,8 @@ console.log('computedKey received:', planInfo.computedKey);
 if (isEdit) {
     rowData['FormID'] = planInfo.formId;
     rowData['_ComputedKey'] = planInfo.computedKey;
-    // Also set Time? to the original time so _ComputedKey stays consistent
-    // computedKey format is "HH:MM:SS: formId"
-    const originalTime = planInfo.computedKey.split(': ')[0].trim();
-    rowData['Time?'] = originalTime;
+    delete rowData['Time?'];  // keep original time so _ComputedKey matches
+    delete rowData['Date?'];  // keep original date too
 }
 
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
