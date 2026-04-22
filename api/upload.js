@@ -22,7 +22,8 @@ export default async function handler(req, res) {
   }
 
   console.log('Received plan. Image chars:', planImageBase64.length);
-  console.log('FormID received:', planInfo.formId || 'none — will Add new row');
+ console.log('FormID received:', planInfo.formId || 'none — will Add new row');
+console.log('computedKey received:', planInfo.computedKey); 
 
   // Step 1: Upload to Cloudinary
   let imageUrl = null;
