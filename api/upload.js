@@ -72,9 +72,13 @@ export default async function handler(req, res) {
   };
 
 if (isEdit) {
+    const lastColonIdx = planInfo.computedKey.lastIndexOf(': ');
+    const time24       = planInfo.computedKey.substring(0, lastColonIdx).trim();
+    const originalTime = convertTo12Hour(time24);
+
     rowData['FormID'] = planInfo.formId;
+    rowData['Time?']  = originalTime;
     delete rowData['Date?'];
-    delete rowData['Time?'];
     delete rowData['_ComputedKey'];
 }
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
