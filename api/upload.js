@@ -91,14 +91,16 @@ async function writeImageUrlToSheet(formId, imageUrl) {
     // Read FormID column to find matching row
     const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${SHEET_NAME}!${FORM_ID_COLUMN}:${FORM_ID_COLUMN}`;
     const readRes = await fetch(readUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const readData = await readRes.json();
+    headers: { Authorization: `Bearer ${token}` },
+});
+const readData = await readRes.json();
+console.log('Sheets read status:', readRes.status);
+console.log('Sheets read response:', JSON.stringify(readData).slice(0, 300));
 
-    if (!readData.values) {
-      console.error('No values found in FormID column');
-      return false;
-    }
+if (!readData.values) {
+    console.error('No values found in FormID column');
+    return false;
+}
 
     // Find matching row (1-based)
     let rowIndex = -1;
