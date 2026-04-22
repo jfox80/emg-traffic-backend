@@ -72,17 +72,10 @@ export default async function handler(req, res) {
   };
 
 if (isEdit) {
-    const lastColonIdx = planInfo.computedKey.lastIndexOf(': ');
-    const time24       = planInfo.computedKey.substring(0, lastColonIdx).trim();
-    const originalTime = convertTo12Hour(time24) + ' '; 
-
-    console.log('time24 extracted:', time24);
-    console.log('originalTime (12hr):', originalTime);
-
-    rowData['FormID']       = planInfo.formId;
-    rowData['_ComputedKey'] = planInfo.computedKey;
-    rowData['Time?']        = originalTime;
+    rowData['FormID'] = planInfo.formId;
     delete rowData['Date?'];
+    delete rowData['Time?'];
+    delete rowData['_ComputedKey'];
 }
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
   if (planInfo.roadComponent) rowData['Road Component?'] = planInfo.roadComponent;
@@ -143,15 +136,15 @@ async function sha1(message) {
 async function uploadToAppSheet(rowData, action = 'Add') {
   const url = `https://api.appsheet.com/api/v2/apps/${APPSHEET_APP_ID}/tables/${encodeURIComponent(APPSHEET_TABLE)}/Action`;
 
- const payload = {
+const payload = {
     Action:     action,
     Properties: {
-        Locale: 'en-US',
-        Timezone: 'America/Toronto'
+        Locale:   'en-US',
+        Timezone: 'America/Toronto',
+        UseBrowserLocale: false
     },
     Rows: [rowData],
 };
-
   let response;
   try {
     response = await fetch(url, {
