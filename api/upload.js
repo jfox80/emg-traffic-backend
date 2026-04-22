@@ -61,10 +61,11 @@ console.log('computedKey received:', planInfo.computedKey);
 if (isEdit) {
     rowData['FormID'] = planInfo.formId;
     rowData['_ComputedKey'] = planInfo.computedKey;
-
-    const originalTime = planInfo.computedKey.split(':').slice(0, 3).join(':').trim() + ' ';
-rowData['Time?'] = originalTime; 
-    delete rowData['Date?'];  
+    // Extract time directly from computedKey — everything before the last ": formId"
+    const lastColonIndex = planInfo.computedKey.lastIndexOf(': ');
+    const originalTime = planInfo.computedKey.substring(0, lastColonIndex).trim();
+    rowData['Time?'] = originalTime;
+    delete rowData['Date?'];
 }
 
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
