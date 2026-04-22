@@ -6,6 +6,19 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_API_KEY    = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
+// Convert 24-hour time string to 12-hour AM/PM format
+// e.g. "15:26:03" → "3:26:03 PM", "09:48:18" → "9:48:18 AM"
+function convertTo12Hour(time24) {
+  const parts = time24.split(':');
+  if (parts.length < 3) return time24; // fallback if format unexpected
+  const h = parseInt(parts[0]);
+  const m = parts[1];
+  const s = parts[2];
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  return `${hour12}:${m}:${s} ${ampm}`;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -22,8 +35,8 @@ export default async function handler(req, res) {
   }
 
   console.log('Received plan. Image chars:', planImageBase64.length);
- console.log('FormID received:', planInfo.formId || 'none — will Add new row');
-console.log('computedKey received:', planInfo.computedKey); 
+  console.log('FormID received:', planInfo.formId || 'none — will Add new row');
+  console.log('computedKey received:', planInfo.computedKey);
 
   // Step 1: Upload to Cloudinary
   let imageUrl = null;
@@ -58,15 +71,21 @@ console.log('computedKey received:', planInfo.computedKey);
                              : '',
   };
 
-if (isEdit) {
-    rowData['FormID'] = planInfo.formId;
-    rowData['_ComputedKey'] = planInfo.computedKey;
-    // Extract time directly from computedKey — everything before the last ": formId"
-    const lastColonIndex = planInfo.computedKey.lastIndexOf(': ');
-    const originalTime = planInfo.computedKey.substring(0, lastColonIndex).trim();
-    rowData['Time?'] = originalTime;
-    delete rowData['Date?'];
-}
+  if (isEdit) {
+    // Extract original time from computedKey (format: "15:26:03: formId" from URL)
+    // AppSheet stores Time? in 12-hour format e.g. "3:26:03 PM"
+    const lastColonIdx  = planInfo.computedKey.lastIndexOf(': ');
+    const time24        = planInfo.computedKey.substring(0, lastColonIdx).trim();
+    const originalTime  = convertTo12Hour(time24);
+
+    console.log('time24 extracted:', time24);
+    console.log('originalTime (12hr):', originalTime);
+
+    rowData['FormID']        = planInfo.formId;
+    rowData['_ComputedKey']  = planInfo.computedKey;
+    rowData['Time?']         = originalTime;  // must match stored 12-hour value
+    delete rowData['Date?'];                  // keep original date
+  }
 
   if (planInfo.roadType)      rowData['Road Type?']      = planInfo.roadType;
   if (planInfo.roadComponent) rowData['Road Component?'] = planInfo.roadComponent;
@@ -93,8 +112,8 @@ if (isEdit) {
 }
 
 async function uploadToCloudinary(base64Image) {
-  const timestamp = Math.round(Date.now() / 1000);
-  const folder    = 'emg-traffic-plans';
+  const timestamp    = Math.round(Date.now() / 1000);
+  const folder       = 'emg-traffic-plans';
   const paramsToSign = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
   const signature    = await sha1(paramsToSign);
 
