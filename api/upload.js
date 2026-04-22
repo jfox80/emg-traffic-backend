@@ -54,7 +54,7 @@ export default async function handler(req, res) {
   const timeStr = now.toTimeString().split(' ')[0];
 
   const isEdit = !!(planInfo.formId);
-  const action = isEdit ? 'Edit' : 'Add';
+ const action = 'Edit';
   console.log('AppSheet action:', action);
 
   const rowData = {
@@ -138,11 +138,10 @@ async function uploadToAppSheet(rowData, action = 'Add') {
 
 const payload = {
     Action:     action,
-    Properties: {
-        Locale:   'en-US',
-        Timezone: 'America/Toronto',
-        UseBrowserLocale: false
-    },
+   Properties: {
+    Locale: 'en-US',
+    RunAsUserEmail: 'jmfox14@asu.edu'  
+},
     Rows: [rowData],
 };
   let response;
