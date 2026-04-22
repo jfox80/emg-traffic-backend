@@ -62,8 +62,8 @@ if (isEdit) {
     rowData['FormID'] = planInfo.formId;
     rowData['_ComputedKey'] = planInfo.computedKey;
 
-    const originalTime = planInfo.computedKey.split(':').slice(0, 3).join(':').trim();
-    rowData['Time?'] = originalTime;
+    const originalTime = planInfo.computedKey.split(':').slice(0, 3).join(':').trim() + ' ';
+rowData['Time?'] = originalTime; 
     delete rowData['Date?'];  
 }
 
