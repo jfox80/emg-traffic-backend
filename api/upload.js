@@ -84,8 +84,7 @@ function pemToDer(pem) {
 // ── Write image URL directly to Google Sheet ──────────────────────────────────
 async function writeImageUrlToSheet(formId, imageUrl) {
   try {
-    console.log('Service account email:', GOOGLE_SERVICE_ACCOUNT_EMAIL);
-    console.log('Private key starts with:', GOOGLE_PRIVATE_KEY.substring(0, 50));
+    
     const token = await getServiceAccountToken();
 
     // Read FormID column to find matching row
@@ -94,8 +93,7 @@ async function writeImageUrlToSheet(formId, imageUrl) {
     headers: { Authorization: `Bearer ${token}` },
 });
 const readData = await readRes.json();
-console.log('Sheets read status:', readRes.status);
-console.log('Sheets read response:', JSON.stringify(readData).slice(0, 300));
+
 
 if (!readData.values) {
     console.error('No values found in FormID column');
